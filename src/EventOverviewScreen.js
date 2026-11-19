@@ -487,4 +487,4 @@ const styles = StyleSheet.create({
     fontSize: 11, color: COLORS.primary,
     marginTop: 4, fontWeight: '700',
   },
-});
+});//

@@ -18,7 +18,7 @@ export const CATEGORIES = [
 ];
 
 export const MEALS = [
-  { key: 'Veg',     color: '#10b981', icon: 'leaf' },
+  { key: 'Veg',     color: '#10b981', icon: 'circle' },
   { key: 'Non-Veg', color: '#ef4444', icon: 'feather' },
   { key: 'Vegan',   color: '#14b8a6', icon: 'sun' },
   { key: 'Jain',    color: '#f59e0b', icon: 'shield' },
@@ -148,4 +148,41 @@ export function nextRsvp(current) {
   const order = ['pending', 'yes', 'maybe', 'no'];
   const idx = order.indexOf(current);
   return order[(idx + 1) % order.length];
+}
+// Append to src/guestsService.js
+
+export async function checkInGuestByQr(guestId, eventId) {
+  try {
+    // 1. First, find the guest to ensure they exist and belong to this event
+    const { data: guest, error: fetchError } = await supabase
+      .from('guests')
+      .select('*')
+      .eq('id', guestId)
+      .eq('event_id', eventId)
+      .single();
+
+    if (fetchError || !guest) {
+      return { ok: false, error: 'Guest not found for this event.' };
+    }
+
+    if (guest.checked_in) {
+      return { ok: false, error: `${guest.name} is already checked in!` };
+    }
+
+    // 2. Update them to checked in
+    const { data, error: updateError } = await supabase
+      .from('guests')
+      .update({ 
+        checked_in: true, 
+        checked_in_at: new Date().toISOString() 
+      })
+      .eq('id', guestId)
+      .select()
+      .single();
+
+    if (updateError) return { ok: false, error: updateError.message };
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
 }

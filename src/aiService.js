@@ -430,6 +430,66 @@ export async function getBudgetInsights(event, expenses, stats) {
     return { ok: false, error: String(e) };
   }
 }
+export async function discoverLocalVendors(event) {
+  try {
+    const { data, error } = await supabase.functions.invoke('ai-assistant', {
+      body: { mode: 'discover_vendors', event },
+    });
+
+    if (error) {
+      console.error('discoverVendors HTTP error:', error);
+      
+      let realError = error.message;
+      try {
+        if (error.context && typeof error.context.json === 'function') {
+          const body = await error.context.json();
+          realError = body.error || JSON.stringify(body);
+          console.error('🚨 Actual function error:', realError);
+        }
+      } catch (e) {
+        console.error('Could not parse error body:', e);
+      }
+      
+      return { ok: false, error: realError };
+    }
+    if (data?.error) {
+      return { ok: false, error: data.error };
+    }
+    return { ok: true, vendors: data.vendors };
+  } catch (e) {
+    console.error('discoverVendors threw:', e);
+    return { ok: false, error: String(e) };
+  }
+}
+export async function discoverRealVendors(event) {
+  try {
+    const { data, error } = await supabase.functions.invoke('ai-assistant', {
+      body: { mode: 'discover_real_vendors', event },
+    });
+
+    if (error) {
+      console.error('discoverRealVendors HTTP error:', error);
+      
+      // Extract the actual error message from the Edge Function
+      let realError = error.message;
+      try {
+        if (error.context && typeof error.context.json === 'function') {
+          const body = await error.context.json();
+          realError = body.error || JSON.stringify(body);
+          console.error('🚨 Actual function error:', realError);
+        }
+      } catch (e) {
+        console.error('Could not parse error body:', e);
+      }
+      
+      return { ok: false, error: realError };
+    }
+    return { ok: true, vendors: data.vendors };
+  } catch (e) {
+    console.error('discoverRealVendors threw:', e);
+    return { ok: false, error: String(e) };
+  }
+}
 // ─── Get event plan ─────────────────────────────────────
 
 export async function getEventPlan(

@@ -18,11 +18,13 @@ import {
   computeMemberStats, getRoleStyle, getStatusStyle, getPriorityStyle,
   deleteAssignment, updateAssignment,
 } from './teamService';
-import { getEvents, formatDate } from './eventsService';
+import { getEvents } from './eventsService';
 import AddGuestModal from './AddGuestModal';
 import AddTeamMemberModal from './AddTeamMemberModal';
 import AddTaskModal from './AddTaskModal';
 import { COLORS, SPACING, RADIUS } from './colors';
+import GuestQRModal from './GuestQRModal';
+import QRScannerModal from './QRScannerModal';
 
 const SUB_TABS = [
   { key: 'guests', label: 'Guests', icon: 'users' },
@@ -49,6 +51,10 @@ export default function GuestsScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [rsvpFilter, setRsvpFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
+
+  // QR States
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [qrGuest, setQrGuest] = useState(null);
 
   // ═══ DATA LOADING ════════════════════════════════════
   const loadData = async () => {
@@ -217,27 +223,33 @@ export default function GuestsScreen({ navigation }) {
                     }`}
               </Text>
             </View>
-            <TouchableOpacity
-              style={styles.addBtn}
-              onPress={() => {
-                if (events.length === 0) {
-                  Alert.alert('No events yet', 'Create an event first.');
-                  return;
-                }
-                if (subTab === 'guests') {
-                  setShowAddGuest(true);
-                } else {
-                  setShowAddMember(true);
-                }
-              }}
-              activeOpacity={0.85}
-            >
-              <Feather
-                name={subTab === 'guests' ? 'user-plus' : 'user-check'}
-                size={22}
-                color="#fff"
-              />
-            </TouchableOpacity>
+            
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+         
+
+              {/* Add Button */}
+              <TouchableOpacity
+                style={styles.addBtn}
+                onPress={() => {
+                  if (events.length === 0) {
+                    Alert.alert('No events yet', 'Create an event first.');
+                    return;
+                  }
+                  if (subTab === 'guests') {
+                    setShowAddGuest(true);
+                  } else {
+                    setShowAddMember(true);
+                  }
+                }}
+                activeOpacity={0.85}
+              >
+                <Feather
+                  name={subTab === 'guests' ? 'user-plus' : 'user-check'}
+                  size={22}
+                  color="#fff"
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Sub-tabs */}
@@ -463,6 +475,7 @@ export default function GuestsScreen({ navigation }) {
                     onCycleRsvp={() => handleRsvpCycle(guest)}
                     onCheckIn={() => handleCheckIn(guest)}
                     onDelete={() => handleDeleteGuest(guest)}
+                    onShowQR={() => setQrGuest(guest)}
                     showEvent={isAllView}
                     eventName={
                       isAllView
@@ -668,6 +681,21 @@ export default function GuestsScreen({ navigation }) {
         member={taskMember}
         onAdded={() => loadData()}
       />
+
+      {/* QR Modals */}
+      <GuestQRModal
+        visible={!!qrGuest}
+        onClose={() => setQrGuest(null)}
+        guest={qrGuest}
+        eventName={events.find((e) => e.id === qrGuest?.event_id)?.name}
+      />
+
+      <QRScannerModal
+        visible={showQRScanner}
+        onClose={() => setShowQRScanner(false)}
+        eventId={selectedEventId}
+        onScanSuccess={() => loadData()}
+      />
     </SafeAreaView>
   );
 }
@@ -735,7 +763,7 @@ function StatCard({ icon, label, value, color }) {
   );
 }
 
-function GuestRow({ guest, onCycleRsvp, onCheckIn, onDelete, showEvent, eventName }) {
+function GuestRow({ guest, onCycleRsvp, onCheckIn, onDelete, onShowQR, showEvent, eventName }) {
   const rsvp = getRsvpStyle(guest.rsvp);
   const category = getCategoryStyle(guest.category);
   const meal = getMealStyle(guest.meal);
@@ -812,6 +840,10 @@ function GuestRow({ guest, onCycleRsvp, onCheckIn, onDelete, showEvent, eventNam
               size={13}
               color={guest.checked_in ? '#fff' : COLORS.textMuted}
             />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.iconAction} onPress={onShowQR}>
+            <Feather name="maximize" size={13} color={COLORS.primary} />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.iconAction} onPress={onDelete}>

@@ -20,6 +20,8 @@ import AIScreen from './AIScreen';
 import CreateEventScreen from './CreateEventScreen';
 import EventSuccessScreen from './EventSuccessScreen';
 import EventOverviewScreen from './EventOverviewScreen';
+import VendorsScreen from './VendorsScreen';
+
 
 const Stack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
@@ -29,6 +31,7 @@ const TAB_ICONS = {
   Events: 'calendar',
   Guests: 'users',
   Budget: 'dollar-sign',
+  Vendors: 'briefcase',
   AI: 'cpu',
 };
 
@@ -56,11 +59,12 @@ function MainTabs() {
         ),
       })}
     >
-      <Tabs.Screen name="Home" component={HomeScreen} />
-      <Tabs.Screen name="Events" component={EventsScreen} />
-      <Tabs.Screen name="Guests" component={GuestsScreen} />
-      <Tabs.Screen name="Budget" component={BudgetScreen} />
-      <Tabs.Screen name="AI" component={AIScreen} />
+       <Tabs.Screen name="Home"    component={HomeScreen} />
+      <Tabs.Screen name="Events"  component={EventsScreen} />
+      <Tabs.Screen name="Guests"  component={GuestsScreen} />
+      <Tabs.Screen name="Budget"  component={BudgetScreen} />
+      <Tabs.Screen name="Vendors" component={VendorsScreen} />
+      <Tabs.Screen name="AI"      component={AIScreen} />
     </Tabs.Navigator>
   );
 }

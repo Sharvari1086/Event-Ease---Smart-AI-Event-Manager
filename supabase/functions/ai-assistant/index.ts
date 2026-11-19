@@ -947,7 +947,182 @@ STRICT RULES:
         }
       );
     }
+        // ═══════════════════════════════════════════
+    // LOCAL VENDOR DISCOVERY (Strict Budget Math)
+    // ═══════════════════════════════════════════
+    if (mode === 'discover_real_vendors') {
+      console.log('🤖 AI finding real, budget-constrained vendors');
+      const { event } = body;
 
+      if (!event) {
+        return new Response(JSON.stringify({ error: 'Event is required' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const location = event.venue_name || 'Mumbai, India';
+      const budget = Number(event.total_budget) || 50000;
+      const guests = Number(event.expected_guests) || 100;
+      const eventDate = event.event_date || 'upcoming date';
+      
+      // Calculate realistic budget caps for the AI
+      const venueCap = Math.round(budget * 0.40);      // 40% for Venue
+      const cateringCap = Math.round(budget * 0.30);   // 30% for Food
+      const decorCap = Math.round(budget * 0.15);      // 15% for Decor
+      const photoCap = Math.round(budget * 0.15);      // 15% for Photography
+
+      const discoveryPrompt = `You are a highly realistic local event concierge API in ${location}.
+The user is planning a ${event.type} for ${guests} guests on ${eventDate}.
+TOTAL BUDGET: Rs ${budget}
+
+CRITICAL BUDGET CONSTRAINTS:
+To ensure the event stays within budget, you MUST adhere to these strict price caps for the 4 suggested vendors:
+1. VENUE: Maximum Rs ${venueCap}
+2. CATERING: Maximum Rs ${cateringCap}
+3. DECORATION: Maximum Rs ${decorCap}
+4. PHOTOGRAPHY: Maximum Rs ${photoCap}
+
+Task: Find 4 REAL, currently existing businesses in ${location} that fit these EXACT price caps.
+If the budget is tight (e.g., Rs 50,000 total), do NOT suggest 5-star hotels. Suggest community halls, local cafes, or budget-friendly caterers.
+
+CRITICAL RULES FOR REAL DATA:
+1. NAME: Use actual, recognizable business names in ${location} (e.g., "Taj Lands End", "Social", "Barbeque Nation", "Sharma Caterers").
+2. PHONE: Provide the ACTUAL publicly listed phone number for these real businesses based on your training data.
+3. TIMINGS: Provide their actual operating hours.
+4. ADDRESS: Provide their real street address or neighborhood.
+5. PRICE: The 'priceEstimate' MUST be LESS THAN OR EQUAL TO the specific caps provided above.
+
+Return ONLY a JSON object matching this exact schema:
+{
+  "vendors": [
+    {
+      "name": "Real Business Name",
+      "category": "Venue",
+      "address": "Real Street Address, ${location}",
+      "distance": "2.5 km",
+      "rating": 4.5,
+      "timings": "10:00 AM - 11:00 PM",
+      "availability": "Available on ${eventDate}",
+      "priceEstimate": 18000, 
+      "contactName": "Manager Name",
+      "phone": "+91 22 6660 1234",
+      "reason": "Affordable venue that fits within your Rs ${venueCap} cap."
+    }
+  ]
+}
+
+Output valid JSON only. No markdown.`;
+
+      const groqMessages = [
+        { 
+          role: 'system', 
+          content: 'You are a factual local business database API. You only output valid JSON. You strictly follow pricing constraints.' 
+        },
+        { role: 'user', content: discoveryPrompt },
+      ];
+
+      try {
+        const raw = await callGroq(groqMessages, true);
+        let cleaned = raw.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+        const result = JSON.parse(cleaned);
+
+        // Post-processing safety net: Force the price down if the AI hallucinated a high price
+        const safeVendors = result.vendors.map((v: any) => {
+          let maxAllowed = budget;
+          if (v.category === 'Venue') maxAllowed = venueCap;
+          else if (v.category === 'Catering') maxAllowed = cateringCap;
+          else if (v.category === 'Decoration') maxAllowed = decorCap;
+          else if (v.category === 'Photography') maxAllowed = photoCap;
+
+          if (v.priceEstimate > maxAllowed) {
+            v.priceEstimate = maxAllowed;
+            v.reason += ` (Price adjusted to fit your budget cap).`;
+          }
+          return v;
+        });
+
+        return new Response(JSON.stringify({ vendors: safeVendors }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (err) {
+        console.error('🚨 AI discovery error:', err);
+        throw new Error(`AI discovery failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+       // ═══════════════════════════════════════════
+    // LOCAL VENDOR DISCOVERY MODE
+    // ═══════════════════════════════════════════
+    if (mode === 'discover_vendors') {
+      console.log('🔍 Entering discover_vendors mode');
+      const { event } = body;
+
+      if (!event) {
+        return new Response(
+          JSON.stringify({ error: 'Event is required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const discoveryPrompt = `You are a local event vendor directory AI.
+The user is planning an event and needs real vendor suggestions nearby.
+
+EVENT DETAILS:
+- Name: ${event.name}
+- Type: ${event.type}
+- Venue: ${event.venue_name || 'Local Area'}
+- Budget: Rs ${event.total_budget || 0}
+- Guests: ${event.expected_guests || 0}
+
+Generate 4 realistic, currently available local vendors suitable for this event.
+Make the names sound like real local businesses. Include the distance (in km).
+
+CRITICAL: Return ONLY a JSON object matching this exact schema. Do not wrap in markdown. Do not add any explanation text before or after.
+
+{
+  "vendors": [
+    {
+      "name": "The Grand Palace Banquet",
+      "category": "Venue",
+      "distance": "2.5 km",
+      "rating": 4.8,
+      "priceEstimate": 45000,
+      "contactName": "Rajesh Kumar",
+      "phone": "+91 98765 43210",
+      "reason": "Fits your guest count and budget perfectly."
+    }
+  ]
+}
+
+Rules:
+- 4 vendors total.
+- Categories must include a mix of: Venue, Catering, Photography, Decoration.
+- priceEstimate must be a realistic number (in Rupees) based on the event budget.
+- Do NOT return anything outside the JSON.`;
+
+      const groqMessages = [
+        { role: 'system', content: 'You are a JSON API. You only output valid JSON objects. Never use markdown, never add explanations.' },
+        { role: 'user', content: discoveryPrompt },
+      ];
+
+      try {
+        const raw = await callGroq(groqMessages, true);
+        console.log('🔍 Raw response preview:', raw.slice(0, 200));
+
+        let cleaned = raw.trim();
+        cleaned = cleaned.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+        
+        const result = JSON.parse(cleaned);
+        console.log('🔍 Parsed OK. Vendors:', result.vendors?.length || 0);
+
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (err) {
+        console.error('🚨 Vendor discovery error:', err);
+        throw new Error(`Vendor discovery failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
     // ═══════════════════════════════════════
     // UNKNOWN MODE
     // ═══════════════════════════════════════

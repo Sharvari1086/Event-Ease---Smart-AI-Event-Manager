@@ -9,8 +9,10 @@ import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { getEvents, daysUntil, formatDate, computeStats } from './eventsService';
 import { getGuests } from './guestsService';
+import NotificationsModal from './NotificationsModal';
 import { useAuth } from './AuthContext';
 import { COLORS, SPACING, RADIUS } from './colors';
+import { getNotifications, syncNotifications, requestNotificationPermissions } from './notificationService';
 
 // ─── Event type styling ─────────────────────────────────
 const TYPE_STYLES = {
@@ -36,6 +38,9 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifs, setShowNotifs] = useState(false);
+
   const loadData = async () => {
     const [evRes, gRes] = await Promise.all([getEvents(), getGuests()]);
     if (evRes.ok) setEvents(evRes.data);
@@ -43,15 +48,27 @@ export default function HomeScreen({ navigation }) {
     setLoading(false);
   };
 
-  useFocusEffect(
+  const loadNotifs = async () => {
+    const res = await getNotifications();
+    if (res.ok) setNotifications(res.data);
+  };
+
+    useFocusEffect(
     useCallback(() => {
+      // Ask for permission to show push notifications
+      requestNotificationPermissions().then((granted) => {
+        if (granted) console.log('✅ Notification permissions granted');
+      });
+
       loadData();
+      loadNotifs();
+      syncNotifications().then(() => loadNotifs());
     }, [])
   );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await Promise.all([loadData(), loadNotifs()]);
     setRefreshing(false);
   };
 
@@ -65,6 +82,7 @@ export default function HomeScreen({ navigation }) {
   const activeEvent = upcoming[0];
   const stats = computeStats(events);
   const confirmedGuests = guests.filter((g) => g.rsvp === 'yes').length;
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   const hour = new Date().getHours();
   const greeting =
@@ -96,7 +114,6 @@ export default function HomeScreen({ navigation }) {
     <View style={styles.root}>
       {/* ═══ FIXED PURPLE HEADER ═══ */}
       <View style={styles.fixedHeader}>
-        {/* Decorative circles inside header */}
         <View style={[styles.headerCircle, styles.headerCircle1]} />
         <View style={[styles.headerCircle, styles.headerCircle2]} />
         <View style={[styles.headerCircle, styles.headerCircle3]} />
@@ -114,19 +131,29 @@ export default function HomeScreen({ navigation }) {
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={styles.avatar}
-              onPress={() => navigation.navigate('Profile')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.avatarText}>
-                {(user?.name?.[0] || 'U').toUpperCase()}
-              </Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity
+                style={styles.bellBtn}
+                onPress={() => setShowNotifs(true)}
+                activeOpacity={0.85}
+              >
+                <Feather name="bell" size={22} color="#fff" />
+                {unreadCount > 0 && <View style={styles.notifBadge} />}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.avatar}
+                onPress={() => navigation.navigate('Profile')}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.avatarText}>
+                  {(user?.name?.[0] || 'U').toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </SafeAreaView>
 
-        {/* Rounded bottom edge of the header */}
         <View style={styles.headerBottomCurve} />
       </View>
 
@@ -142,10 +169,8 @@ export default function HomeScreen({ navigation }) {
           />
         }
       >
-        {/* Spacer to push content below fixed header */}
         <View style={styles.headerSpacer} />
 
-        {/* Active event hero card */}
         {activeEvent ? (
           <TouchableOpacity
             style={styles.heroCard}
@@ -281,7 +306,6 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         )}
 
-        {/* KPI Grid */}
         {events.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Your overview</Text>
@@ -314,7 +338,6 @@ export default function HomeScreen({ navigation }) {
           </>
         )}
 
-        {/* Upcoming events list */}
         {events.length > 0 && (
           <>
             <View style={styles.sectionRow}>
@@ -343,7 +366,6 @@ export default function HomeScreen({ navigation }) {
           </>
         )}
 
-        {/* Quick actions */}
         <Text style={styles.sectionTitle}>Quick actions</Text>
         <View style={styles.actionsGrid}>
           <QuickAction
@@ -374,6 +396,13 @@ export default function HomeScreen({ navigation }) {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <NotificationsModal
+        visible={showNotifs}
+        onClose={() => setShowNotifs(false)}
+        notifications={notifications}
+        onUpdate={loadNotifs}
+      />
     </View>
   );
 }
@@ -483,7 +512,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  // ═══ FIXED HEADER ═══
   fixedHeader: {
     position: 'absolute',
     top: 0,
@@ -502,7 +530,6 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.md,
     flex: 1,
   },
-  // Decorative circles inside the fixed header
   headerCircle: {
     position: 'absolute',
     borderRadius: 999,
@@ -531,7 +558,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#a5b4fc',
     opacity: 0.3,
   },
-  // Rounded bottom edge overlay
   headerBottomCurve: {
     position: 'absolute',
     bottom: -1,
@@ -568,17 +594,37 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: '#fff', fontSize: 20, fontWeight: '800' },
 
-  // ═══ SCROLL CONTENT ═══
+  bellBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 12,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: COLORS.danger,
+    borderWidth: 2,
+    borderColor: '#4f46e5',
+  },
+
   scroll: {
     paddingHorizontal: SPACING.lg,
     paddingBottom: 100,
   },
-  // Pushes content below the fixed header
   headerSpacer: {
-    height: 170, // matches fixedHeader height minus a bit for overlap
+    height: 170,
   },
 
-  // Hero card
   heroCard: {
     backgroundColor: COLORS.card,
     borderRadius: RADIUS.xl,
@@ -690,7 +736,6 @@ const styles = StyleSheet.create({
   },
   progressFill: { height: '100%', borderRadius: 4 },
 
-  // Empty hero
   emptyHero: {
     backgroundColor: COLORS.card,
     borderRadius: RADIUS.xl,
@@ -725,7 +770,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Section
   sectionTitle: {
     fontSize: 17,
     fontWeight: '800',
@@ -751,7 +795,6 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
 
-  // KPI grid
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -801,7 +844,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Compact event row
   compactCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -866,7 +908,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Quick actions
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
